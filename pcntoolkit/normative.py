@@ -223,7 +223,7 @@ def save_results(respfile, Yhat, S2, maskvol, Z=None, Y=None, outputsuffix=None,
     print("Writing outputs ...")
     if respfile is None:
         exfile = None
-        file_ext = '.pkl'
+        file_ext = '.pkl' 
     else:
         if fileio.file_type(respfile) == 'cifti' or \
            fileio.file_type(respfile) == 'nifti':
@@ -325,6 +325,7 @@ def estimate(covfile, respfile, **kwargs):
     inscaler = kwargs.pop('inscaler','None')
     outscaler = kwargs.pop('outscaler','None')
     warp = kwargs.get('warp', None)
+    output_path = kwargs.pop('output_path','None')
 
     # convert from strings if necessary
     saveoutput = kwargs.pop('saveoutput','True')
@@ -457,7 +458,7 @@ def estimate(covfile, respfile, **kwargs):
                 yhat, s2 = nm.predict(Xz_ts, Xz_tr, Yz_tr[:, i], **kwargs)
                 
                 if savemodel:
-                    nm.save('Models/NM_' + str(fold) + '_' + str(nz[i]) + 
+                    nm.save(f'{output_path}/NM_' + str(fold) + '_' + str(nz[i]) +
                             outputsuffix + '.pkl' )
                 
                 if outscaler == 'standardize': 
@@ -525,7 +526,7 @@ def estimate(covfile, respfile, **kwargs):
     if savemodel:
         print('Saving model meta-data...')
         v  = get_package_versions()
-        with open('Models/meta_data.md', 'wb') as file:
+        with open(f'{output_path}/meta_data.md', 'wb') as file:
             pickle.dump({'valid_voxels':nz, 'fold_num':cvfolds, 
                          'mean_resp':mean_resp, 'std_resp':std_resp, 
                          'scaler_cov':scaler_cov, 'scaler_resp':scaler_resp, 
@@ -580,6 +581,7 @@ def fit(covfile, respfile, **kwargs):
     outputsuffix = "_" + outputsuffix.replace("_", "")
     inscaler = kwargs.pop('inscaler','None')
     outscaler = kwargs.pop('outscaler','None')
+    output_path = kwargs.pop('output_path','None')
     
     if savemodel and not os.path.isdir('Models'):
         os.mkdir('Models')
@@ -631,13 +633,13 @@ def fit(covfile, respfile, **kwargs):
         nm = nm.estimate(Xz, Yz[:, nz[i]], **kwargs)     
             
         if savemodel:
-            nm.save('Models/NM_' + str(0) + '_' + str(nz[i]) + outputsuffix + 
+            nm.save(f'{output_path}/NM_' + str(0) + '_' + str(nz[i]) + outputsuffix + 
                     '.pkl' )
 
     if savemodel:
         print('Saving model meta-data...')
         v  = get_package_versions()
-        with open('Models/meta_data.md', 'wb') as file:
+        with open(f'{output_path}/meta_data.md', 'wb') as file:
             pickle.dump({'valid_voxels':nz,
                          'mean_resp':mean_resp, 'std_resp':std_resp, 
                          'scaler_cov':scaler_cov, 'scaler_resp':scaler_resp, 
@@ -684,6 +686,7 @@ def predict(covfile, respfile, maskfile=None, **kwargs):
     
     
     model_path = kwargs.pop('model_path', 'Models')
+    print('model_path: ', model_path)
     job_id = kwargs.pop('job_id', None)
     batch_size = kwargs.pop('batch_size', None)
     outputsuffix = kwargs.pop('outputsuffix', 'predict')
@@ -944,8 +947,11 @@ def transfer(covfile, respfile, testcov=None, testresp=None, maskfile=None,
     
     feature_num = Y.shape[1]
     mY = np.mean(Y, axis=0)
-    sY = np.std(Y, axis=0)  
-    
+    sY = np.std(Y, axis=0)
+    mean_resp = []  # this is just for computing MSLL
+    std_resp = []
+    mean_resp.append(mY)
+    std_resp.append(sY)
     if outscaler in ['standardize', 'minmax', 'robminmax']:
         Y = scaler_resp[0].transform(Y)
     
@@ -1002,6 +1008,12 @@ def transfer(covfile, respfile, testcov=None, testresp=None, maskfile=None,
             else:
                 nm.save(os.path.join(output_path, 'NM_0_' + 
                                  str(i) + outputsuffix + '.pkl'))
+                with open(f'{output_path}/meta_data.md', 'wb') as file:
+                    pickle.dump({'mean_resp': mean_resp, 'std_resp': std_resp,
+                                    'scaler_cov': scaler_cov, 'scaler_resp': scaler_resp,
+                                    'regressor': alg, 'inscaler': inscaler,
+                                    'outscaler': outscaler},
+                                    file, protocol=PICKLE_PROTOCOL)
             
             if testcov is not None:
                 yhat, s2 = nm.predict_on_new_sites(Xte, batch_effects_test)
@@ -1073,7 +1085,7 @@ def transfer(covfile, respfile, testcov=None, testresp=None, maskfile=None,
                            metrics = ['Rho', 'RMSE', 'SMSE', 'EXPV'])
                 
         save_results(respfile, Yhat, S2, maskvol, Z=Z, results=results,
-                     outputsuffix=outputsuffix)
+                     outputsuffix=outputsuffix, save_path=output_path)
         
         # Creates a file for every job succesfully completed (for tracking failed jobs).
         if count_jobsdone==True:
